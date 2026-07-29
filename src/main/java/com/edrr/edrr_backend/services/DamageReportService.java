@@ -78,8 +78,8 @@ public class DamageReportService {
         dr.setAffectedArea(report.getAffectedArea());
         dr.setStatus("PENDING");
         dr.setRecoveryProgress(0);
-        dr.setReportedBy("");
-        dr.setReporterName("");
+        dr.setReportedBy(report.getReportedBy());
+        dr.setReporterName(report.getReporterName());
         dr.setReportedAt(LocalDateTime.now());
         dr.setPhotoUrls(photoUrls);
 

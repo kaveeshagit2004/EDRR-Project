@@ -116,4 +116,13 @@ public class UserServices {
             userRepository.save(user);
         });
     }
+
+    // ── RESET PASSWORD ───────────────────────────────────────────────────
+    public void resetPassword(String email, String newPasswordRaw) {
+        userRepository.findByEmail(email).ifPresent(user -> {
+            user.setPassword(passwordEncoder.encode(newPasswordRaw));
+            user.setUpdatedAt(LocalDateTime.now());
+            userRepository.save(user);
+        });
+    }
 }

@@ -31,10 +31,13 @@ public class DamageReportDto {
 
     private List<MultipartFile> photos;
 
+    private String reportedBy;
+    private String reporterName;
+
     public DamageReportDto() {
     }
 
-    public DamageReportDto(String id, String title, String damageType, String location, double latitude, double longitude, String severity, String description, String affectedArea, List<MultipartFile> photos) {
+    public DamageReportDto(String id, String title, String damageType, String location, double latitude, double longitude, String severity, String description, String affectedArea, List<MultipartFile> photos, String reportedBy, String reporterName) {
         this.id = id;
         this.title = title;
         this.damageType = damageType;
@@ -45,6 +48,24 @@ public class DamageReportDto {
         this.description = description;
         this.affectedArea = affectedArea;
         this.photos = photos;
+        this.reportedBy = reportedBy;
+        this.reporterName = reporterName;
+    }
+
+    public String getReportedBy() {
+        return reportedBy;
+    }
+
+    public void setReportedBy(String reportedBy) {
+        this.reportedBy = reportedBy;
+    }
+
+    public String getReporterName() {
+        return reporterName;
+    }
+
+    public void setReporterName(String reporterName) {
+        this.reporterName = reporterName;
     }
 
     public String getId() {

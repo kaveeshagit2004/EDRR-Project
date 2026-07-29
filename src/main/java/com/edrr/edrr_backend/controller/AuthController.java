@@ -91,4 +91,35 @@ public class AuthController {
             return ResponseEntity.status(401).body(error);
         }
     }
+
+    // ── FORGOT PASSWORD ───────────────────────────────────────────────────
+    // POST http://localhost:8080/api/auth/forgot-password
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> request) {
+        try {
+            String email = request.get("email");
+            String nic = request.get("nic");
+            String newPassword = request.get("newPassword");
+
+            if (email == null || nic == null || newPassword == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Email, NIC, and new password are required"));
+            }
+
+            java.util.Optional<User> userOpt = userService.getUserByEmail(email);
+            if (userOpt.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "User not found with this email"));
+            }
+
+            User user = userOpt.get();
+            if (user.getNic() == null || !nic.equalsIgnoreCase(user.getNic())) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Invalid NIC provided for this email"));
+            }
+
+            userService.resetPassword(email, newPassword);
+
+            return ResponseEntity.ok(Map.of("message", "Password reset successful"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
 }

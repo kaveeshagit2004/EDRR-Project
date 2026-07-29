@@ -49,6 +49,19 @@ public class DamageReportController {
         try {
             java.nio.file.Path filePath = java.nio.file.Paths.get(System.getProperty("user.dir") + "/stored_photos/").resolve(filename).normalize();
             Resource resource = new UrlResource(filePath.toUri());
+            
+            // Fallback 1: Try nested edrr-backend directory
+            if (!resource.exists() || !resource.isReadable()) {
+                java.nio.file.Path alternativePath = java.nio.file.Paths.get(System.getProperty("user.dir") + "/edrr-backend/stored_photos/").resolve(filename).normalize();
+                resource = new UrlResource(alternativePath.toUri());
+            }
+            
+            // Fallback 2: Try parent directory (if server is running inside the inner folder)
+            if (!resource.exists() || !resource.isReadable()) {
+                java.nio.file.Path alternativePath = java.nio.file.Paths.get(System.getProperty("user.dir") + "/../stored_photos/").resolve(filename).normalize();
+                resource = new UrlResource(alternativePath.toUri());
+            }
+
             if (resource.exists() && resource.isReadable()) {
                 String contentType = request.getServletContext().getMimeType(resource.getFile().getAbsolutePath());
                 if (contentType == null) {
