@@ -7,6 +7,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -109,6 +110,7 @@ public class DamageReportController {
     // PUT http://localhost:8080/api/reports/{id}/status
     // Body: { "status": "IN_PROGRESS", "adminNotes": "Team dispatched" }
     @PutMapping("/{id}/status")
+    @PreAuthorize("hasAnyRole('GA_ADMIN', 'RDA_ADMIN')")
     public ResponseEntity<?> updateStatus(@PathVariable String id,
                                           @RequestBody Map<String, String> body) {
         try {
@@ -124,6 +126,7 @@ public class DamageReportController {
     // PUT http://localhost:8080/api/reports/{id}/progress
     // Body: { "progress": 75 }
     @PutMapping("/{id}/progress")
+    @PreAuthorize("hasAnyRole('GA_ADMIN', 'RDA_ADMIN')")
     public ResponseEntity<?> updateProgress(@PathVariable String id,
                                             @RequestBody Map<String, Integer> body) {
         try {
