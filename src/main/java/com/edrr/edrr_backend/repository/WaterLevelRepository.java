@@ -11,6 +11,7 @@ public interface WaterLevelRepository extends MongoRepository<WaterLevel, String
 
     // Find by location name
     Optional<WaterLevel> findByLocationName(String locationName);
+    Optional<WaterLevel> findByLocationNameIgnoreCase(String locationName);
 
     // Find all by district
     List<WaterLevel> findByDistrict(String district);

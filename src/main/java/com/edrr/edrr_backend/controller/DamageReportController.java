@@ -79,6 +79,13 @@ public class DamageReportController {
         }
     }
 
+    // ── GET DELETED REPORTS (RECYCLE BIN) ─────────────────────────────────
+    // GET http://localhost:8080/api/reports/recycle-bin
+    @GetMapping("/recycle-bin")
+    public ResponseEntity<List<DamageReport>> getDeletedReports() {
+        return ResponseEntity.ok(reportService.getDeletedReports());
+    }
+
     // ── GET REPORT BY ID ──────────────────────────────────────────────────
     // GET http://localhost:8080/api/reports/{id}
     @GetMapping("/{id}")
@@ -144,13 +151,38 @@ public class DamageReportController {
         return ResponseEntity.ok(reportService.getDashboardStats());
     }
 
-    // ── DELETE REPORT ─────────────────────────────────────────────────────
+    // ── SOFT DELETE REPORT (MOVE TO RECYCLE BIN) ──────────────────────────
     // DELETE http://localhost:8080/api/reports/{id}
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteReport(@PathVariable String id) {
+    public ResponseEntity<?> deleteReport(@PathVariable String id, java.security.Principal principal) {
         try {
-            reportService.deleteReport(id);
-            return ResponseEntity.ok(Map.of("message", "Report deleted successfully"));
+            String userEmail = principal != null ? principal.getName() : null;
+            DamageReport report = reportService.softDeleteReport(id, userEmail);
+            return ResponseEntity.ok(Map.of("message", "Report moved to recycle bin", "report", report));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    // ── RESTORE REPORT FROM RECYCLE BIN ───────────────────────────────────
+    // PUT http://localhost:8080/api/reports/{id}/restore
+    @PutMapping("/{id}/restore")
+    public ResponseEntity<?> restoreReport(@PathVariable String id) {
+        try {
+            DamageReport report = reportService.restoreReport(id);
+            return ResponseEntity.ok(Map.of("message", "Report restored successfully", "report", report));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    // ── PERMANENTLY DELETE REPORT ─────────────────────────────────────────
+    // DELETE http://localhost:8080/api/reports/{id}/permanent
+    @DeleteMapping("/{id}/permanent")
+    public ResponseEntity<?> permanentlyDeleteReport(@PathVariable String id) {
+        try {
+            reportService.permanentlyDeleteReport(id);
+            return ResponseEntity.ok(Map.of("message", "Report permanently deleted"));
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }

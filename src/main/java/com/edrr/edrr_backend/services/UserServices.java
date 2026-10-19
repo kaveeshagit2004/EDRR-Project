@@ -28,14 +28,51 @@ public class UserServices {
             throw new RuntimeException("Email already registered: " + user.getEmail());
         }
 
-        // Check if username already exists
-        if (userRepository.existsByUsername(user.getUsername())) {
-            throw new RuntimeException("Username already taken: " + user.getUsername());
+        // Ensure username is set; auto-generate a clean unique one if not provided
+        if (user.getUsername() == null || user.getUsername().trim().isEmpty()) {
+            String base = "";
+            if (user.getEmail() != null && user.getEmail().contains("@")) {
+                base = user.getEmail().split("@")[0].toLowerCase().replaceAll("[^a-z0-9_]", "");
+            } else if (user.getNic() != null && !user.getNic().trim().isEmpty()) {
+                base = user.getNic().trim().toLowerCase();
+            }
+            if (base.isEmpty()) {
+                base = "officer";
+            }
+
+            String candidate = base;
+            int counter = 1;
+            while (userRepository.existsByUsername(candidate)) {
+                candidate = base + counter++;
+            }
+            user.setUsername(candidate);
+        } else {
+            user.setUsername(user.getUsername().trim());
+            // Check if username already exists
+            if (userRepository.existsByUsername(user.getUsername())) {
+                throw new RuntimeException("Username already taken: " + user.getUsername());
+            }
         }
 
         // Check if NIC already exists
         if (userRepository.existsByNic(user.getNic())) {
             throw new RuntimeException("NIC already registered: " + user.getNic());
+        }
+
+        // Validate divisionName for Rural Division Officers
+        if ("RURAL_OFFICER".equals(user.getRole())) {
+            if (user.getDivisionName() == null || user.getDivisionName().trim().isEmpty()) {
+                throw new RuntimeException("Rural officer division name is required");
+            }
+            user.setDivisionName(user.getDivisionName().trim());
+        }
+
+        // Validate waterStation for Irrigation Officers
+        if ("IRRIGATION_OFFICER".equals(user.getRole())) {
+            if (user.getWaterStation() == null || user.getWaterStation().trim().isEmpty()) {
+                throw new RuntimeException("Water-reading station is required for Irrigation Officers");
+            }
+            user.setWaterStation(user.getWaterStation().trim());
         }
 
         // Encrypt the password before saving (NEVER save plain text password!)

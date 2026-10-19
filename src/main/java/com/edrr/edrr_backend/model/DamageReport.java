@@ -57,6 +57,12 @@ public class DamageReport {
     private LocalDateTime updatedAt;
     private LocalDateTime resolvedAt;
 
+    // Soft delete / recycle bin
+    private boolean deleted = false;
+    private LocalDateTime deletedAt;
+    private String deletedBy;
+    private String deletedByName;
+
     public DamageReport() {
     }
 
@@ -126,4 +132,16 @@ public class DamageReport {
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     public LocalDateTime getResolvedAt() { return resolvedAt; }
     public void setResolvedAt(LocalDateTime resolvedAt) { this.resolvedAt = resolvedAt; }
+
+    public boolean isDeleted() { return deleted; }
+    public void setDeleted(boolean deleted) { this.deleted = deleted; }
+
+    public LocalDateTime getDeletedAt() { return deletedAt; }
+    public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+
+    public String getDeletedBy() { return deletedBy; }
+    public void setDeletedBy(String deletedBy) { this.deletedBy = deletedBy; }
+
+    public String getDeletedByName() { return deletedByName; }
+    public void setDeletedByName(String deletedByName) { this.deletedByName = deletedByName; }
 }

@@ -19,9 +19,10 @@ public class User {
     @NotBlank(message = "Full name is required")
     private String fullName;
 
-    @NotBlank(message = "Username is required")
     @Indexed(unique = true)    // Username must be unique in database
     private String username;
+
+    private String profilePhotoUrl;
 
     @NotBlank(message = "NIC is required")
     @Indexed(unique = true)
@@ -40,6 +41,12 @@ public class User {
 
     private String phoneNumber;
     private String address;
+
+    // Rural Officer Division Name (specific to RURAL_OFFICER)
+    private String divisionName;
+
+    // Assigned Water-Reading Station (specific to IRRIGATION_OFFICER)
+    private String waterStation;
 
     private boolean active = true;   // Account active status
     private boolean verified = false; // Email verified status
@@ -97,4 +104,12 @@ public class User {
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     public LocalDateTime getLastLogin() { return lastLogin; }
     public void setLastLogin(LocalDateTime lastLogin) { this.lastLogin = lastLogin; }
+    public String getProfilePhotoUrl() { return profilePhotoUrl; }
+    public void setProfilePhotoUrl(String profilePhotoUrl) { this.profilePhotoUrl = profilePhotoUrl; }
+    public String getDivisionName() { return divisionName; }
+    public void setDivisionName(String divisionName) { this.divisionName = divisionName; }
+    public String getWaterStation() { return waterStation; }
+    public void setWaterStation(String waterStation) { this.waterStation = waterStation; }
+    public String getWaterReadingStation() { return waterStation; }
+    public void setWaterReadingStation(String waterReadingStation) { this.waterStation = waterReadingStation; }
 }

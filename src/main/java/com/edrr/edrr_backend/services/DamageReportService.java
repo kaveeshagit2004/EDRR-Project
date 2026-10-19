@@ -17,18 +17,21 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import com.edrr.edrr_backend.repository.UserRepository;
 import java.util.UUID;
 
 @Service
 public class DamageReportService {
-    public DamageReportService(DamageReportRepository reportRepository) {
+    private final DamageReportRepository reportRepository;
+    private final UserRepository userRepository;
+
+    public DamageReportService(DamageReportRepository reportRepository, UserRepository userRepository) {
         this.reportRepository = reportRepository;
+        this.userRepository = userRepository;
     }
 
     // Target directory to save files on your host machine
     private static final String UPLOAD_DIR = System.getProperty("user.dir") + "/stored_photos/";
-
-    private final DamageReportRepository reportRepository;
 
     // ── CREATE NEW DAMAGE REPORT ─────────────────────────────────────────
     public DamageReport createReport(@Valid DamageReportDto report) {
@@ -79,7 +82,11 @@ public class DamageReportService {
         dr.setStatus("PENDING");
         dr.setRecoveryProgress(0);
         dr.setReportedBy(report.getReportedBy());
-        dr.setReporterName(report.getReporterName());
+        String repName = report.getReporterName();
+        if (repName == null || repName.isBlank()) {
+            repName = "Field Officer";
+        }
+        dr.setReporterName(repName);
         dr.setReportedAt(LocalDateTime.now());
         dr.setPhotoUrls(photoUrls);
 
@@ -88,9 +95,9 @@ public class DamageReportService {
         return saved;
     }
 
-    // ── GET ALL REPORTS ──────────────────────────────────────────────────
+    // ── GET ALL REPORTS (ACTIVE ONLY) ────────────────────────────────────
     public List<DamageReport> getAllReports() {
-        List<DamageReport> reports = reportRepository.findAll();
+        List<DamageReport> reports = reportRepository.findAllActive();
         reports.forEach(this::populatePhotoUrls);
         return reports;
     }
@@ -103,16 +110,23 @@ public class DamageReportService {
         return report;
     }
 
-    // ── GET REPORTS BY STATUS ────────────────────────────────────────────
+    // ── GET REPORTS BY STATUS (ACTIVE ONLY) ──────────────────────────────
     public List<DamageReport> getReportsByStatus(String status) {
-        List<DamageReport> reports = reportRepository.findByStatus(status);
+        List<DamageReport> reports = reportRepository.findByStatusAndNotDeleted(status);
         reports.forEach(this::populatePhotoUrls);
         return reports;
     }
 
-    // ── GET REPORTS BY OFFICER ───────────────────────────────────────────
+    // ── GET REPORTS BY OFFICER (ACTIVE ONLY) ─────────────────────────────
     public List<DamageReport> getReportsByOfficer(String officerId) {
-        List<DamageReport> reports = reportRepository.findByReportedBy(officerId);
+        List<DamageReport> reports = reportRepository.findByReportedByAndNotDeleted(officerId);
+        reports.forEach(this::populatePhotoUrls);
+        return reports;
+    }
+
+    // ── GET DELETED REPORTS (RECYCLE BIN) ─────────────────────────────────
+    public List<DamageReport> getDeletedReports() {
+        List<DamageReport> reports = reportRepository.findByDeletedTrue();
         reports.forEach(this::populatePhotoUrls);
         return reports;
     }
@@ -155,20 +169,79 @@ public class DamageReportService {
     // ── GET DASHBOARD STATISTICS ─────────────────────────────────────────
     public java.util.Map<String, Long> getDashboardStats() {
         java.util.Map<String, Long> stats = new java.util.HashMap<>();
-        stats.put("total", reportRepository.count());
-        stats.put("pending", reportRepository.countByStatus("PENDING"));
-        stats.put("inProgress", reportRepository.countByStatus("IN_PROGRESS"));
-        stats.put("resolved", reportRepository.countByStatus("RESOLVED"));
-        stats.put("rejected", reportRepository.countByStatus("REJECTED"));
+        stats.put("total", reportRepository.countActive());
+        stats.put("pending", reportRepository.countByStatusAndNotDeleted("PENDING"));
+        stats.put("inProgress", reportRepository.countByStatusAndNotDeleted("IN_PROGRESS"));
+        stats.put("resolved", reportRepository.countByStatusAndNotDeleted("RESOLVED"));
+        stats.put("rejected", reportRepository.countByStatusAndNotDeleted("REJECTED"));
+        stats.put("deleted", reportRepository.countByDeletedTrue());
         return stats;
     }
 
-    // ── DELETE REPORT ────────────────────────────────────────────────────
-    public void deleteReport(String id) {
-        if (!reportRepository.existsById(id)) {
-            throw new RuntimeException("Report not found: " + id);
+    // ── SOFT DELETE REPORT (MOVE TO RECYCLE BIN) ─────────────────────────
+    public DamageReport softDeleteReport(String id, String userEmail) {
+        DamageReport report = reportRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Report not found: " + id));
+        report.setDeleted(true);
+        report.setDeletedAt(LocalDateTime.now());
+        report.setDeletedBy(userEmail != null ? userEmail : "Unknown");
+
+        String deleterName = "Authorized Officer";
+        if (userEmail != null && !userEmail.isBlank()) {
+            var userOpt = userRepository.findByEmail(userEmail);
+            if (userOpt.isPresent() && userOpt.get().getFullName() != null && !userOpt.get().getFullName().isBlank()) {
+                deleterName = userOpt.get().getFullName();
+            } else {
+                deleterName = userEmail;
+            }
+        }
+        report.setDeletedByName(deleterName);
+        report.setUpdatedAt(LocalDateTime.now());
+        DamageReport saved = reportRepository.save(report);
+        populatePhotoUrls(saved);
+        return saved;
+    }
+
+    // ── RESTORE REPORT FROM RECYCLE BIN ──────────────────────────────────
+    public DamageReport restoreReport(String id) {
+        DamageReport report = reportRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Report not found: " + id));
+        report.setDeleted(false);
+        report.setDeletedAt(null);
+        report.setDeletedBy(null);
+        report.setDeletedByName(null);
+        report.setUpdatedAt(LocalDateTime.now());
+        DamageReport saved = reportRepository.save(report);
+        populatePhotoUrls(saved);
+        return saved;
+    }
+
+    // ── PERMANENTLY DELETE REPORT ────────────────────────────────────────
+    public void permanentlyDeleteReport(String id) {
+        DamageReport report = reportRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Report not found: " + id));
+        // Remove photos from filesystem if present
+        if (report.getPhotoUrls() != null) {
+            for (String photoName : report.getPhotoUrls()) {
+                try {
+                    String filename = photoName;
+                    if (filename.contains("/")) {
+                        filename = filename.substring(filename.lastIndexOf('/') + 1);
+                    }
+                    File file = new File(UPLOAD_DIR + filename);
+                    if (file.exists()) {
+                        file.delete();
+                    }
+                } catch (Exception ignored) {
+                }
+            }
         }
         reportRepository.deleteById(id);
+    }
+
+    // ── DELETE REPORT (LEGACY COMPATIBILITY: SOFT DELETE) ─────────────────
+    public void deleteReport(String id) {
+        softDeleteReport(id, null);
     }
 
     // ── PRIVATE HELPER: Generate Report Number ───────────────────────────
