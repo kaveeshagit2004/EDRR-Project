@@ -18,8 +18,7 @@ public class PublicDamageReport {
     @NotBlank(message = "Title is required")
     private String title;
 
-    // Type: FLOOD, ROAD_DAMAGE, LANDSLIDE, BRIDGE_DAMAGE, BUILDING, WATER_POLLUTION, OTHER
-    @NotBlank(message = "Damage type is required")
+    // Optional legacy fields (removed from public submission)
     private String damageType;
 
     @NotBlank(message = "Location is required")
@@ -67,6 +66,12 @@ public class PublicDamageReport {
     private LocalDateTime deletedAt;
     private String deletedBy;
     private String deletedByName;
+
+    // RDA Admin view tracking
+    private boolean viewedByRda = false;
+    private LocalDateTime viewedAt;
+    private String viewedByName;
+    private String viewedByEmail;
 
     public PublicDamageReport() {
     }
@@ -151,4 +156,16 @@ public class PublicDamageReport {
 
     public String getDivisionName() { return divisionName; }
     public void setDivisionName(String divisionName) { this.divisionName = divisionName; }
+
+    public boolean isViewedByRda() { return viewedByRda; }
+    public void setViewedByRda(boolean viewedByRda) { this.viewedByRda = viewedByRda; }
+
+    public LocalDateTime getViewedAt() { return viewedAt; }
+    public void setViewedAt(LocalDateTime viewedAt) { this.viewedAt = viewedAt; }
+
+    public String getViewedByName() { return viewedByName; }
+    public void setViewedByName(String viewedByName) { this.viewedByName = viewedByName; }
+
+    public String getViewedByEmail() { return viewedByEmail; }
+    public void setViewedByEmail(String viewedByEmail) { this.viewedByEmail = viewedByEmail; }
 }

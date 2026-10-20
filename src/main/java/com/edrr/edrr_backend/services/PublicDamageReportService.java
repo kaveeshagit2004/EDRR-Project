@@ -2,9 +2,12 @@ package com.edrr.edrr_backend.services;
 
 import com.edrr.edrr_backend.dto.PublicDamageReportDto;
 import com.edrr.edrr_backend.model.PublicDamageReport;
+import com.edrr.edrr_backend.model.SystemSetting;
 import com.edrr.edrr_backend.model.User;
 import com.edrr.edrr_backend.repository.PublicDamageReportRepository;
+import com.edrr.edrr_backend.repository.SystemSettingRepository;
 import com.edrr.edrr_backend.repository.UserRepository;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -25,16 +28,57 @@ public class PublicDamageReportService {
 
     private final PublicDamageReportRepository repository;
     private final UserRepository userRepository;
+    private final SystemSettingRepository systemSettingRepository;
 
-    public PublicDamageReportService(PublicDamageReportRepository repository, UserRepository userRepository) {
+    private static final long EXPIRATION_DAYS = 7L;
+
+    public PublicDamageReportService(PublicDamageReportRepository repository,
+                                     UserRepository userRepository,
+                                     SystemSettingRepository systemSettingRepository) {
         this.repository = repository;
         this.userRepository = userRepository;
+        this.systemSettingRepository = systemSettingRepository;
     }
 
     private static final String UPLOAD_DIR = System.getProperty("user.dir") + "/stored_photos/";
 
+    // ── CHECK EXPIRATION (AUTO-DISAPPEAR AFTER 1 WEEK / 7 DAYS) ──────────
+    public boolean isExpired(PublicDamageReport report) {
+        if (report == null || report.getReportedAt() == null) return false;
+        return report.getReportedAt().isBefore(LocalDateTime.now().minusDays(EXPIRATION_DAYS));
+    }
+
+    // Automatically soft-delete any reports older than 7 days
+    public void autoExpireOldReports() {
+        try {
+            LocalDateTime cutoff = LocalDateTime.now().minusDays(EXPIRATION_DAYS);
+            List<PublicDamageReport> activeReports = repository.findAllActive();
+            for (PublicDamageReport r : activeReports) {
+                if (r.getReportedAt() != null && r.getReportedAt().isBefore(cutoff)) {
+                    r.setDeleted(true);
+                    r.setDeletedAt(LocalDateTime.now());
+                    r.setDeletedByName("System (Auto-Expired after 7 Days)");
+                    repository.save(r);
+                }
+            }
+        } catch (Exception e) {
+            // Log silently and continue without breaking incoming requests
+            System.err.println("Warning: autoExpireOldReports failed: " + e.getMessage());
+        }
+    }
+
+    // Hourly background task to ensure database-level cleanliness
+    @Scheduled(fixedRate = 3600000)
+    public void scheduledCleanupExpiredReports() {
+        autoExpireOldReports();
+    }
+
     // ── CREATE NEW PUBLIC DAMAGE REPORT ──────────────────────────────────
     public PublicDamageReport createReport(PublicDamageReportDto dto) {
+        if (!isDamageReportingOpen()) {
+            throw new RuntimeException("Public damage reporting is currently closed by GA Admin. Please wait until damage reporting is opened.");
+        }
+
         File directory = new File(UPLOAD_DIR);
         if (!directory.exists()) {
             directory.mkdirs();
@@ -63,11 +107,11 @@ public class PublicDamageReportService {
         PublicDamageReport report = new PublicDamageReport();
         report.setReportNumber(reportNumber);
         report.setTitle(dto.getTitle());
-        report.setDamageType(dto.getDamageType());
+        report.setDamageType(dto.getDamageType() != null && !dto.getDamageType().isBlank() ? dto.getDamageType() : null);
         report.setLocation(dto.getLocation());
         report.setLatitude(dto.getLatitude());
         report.setLongitude(dto.getLongitude());
-        report.setSeverity(dto.getSeverity() != null ? dto.getSeverity() : "MEDIUM");
+        report.setSeverity(dto.getSeverity() != null && !dto.getSeverity().isBlank() ? dto.getSeverity() : null);
         report.setDescription(dto.getDescription());
         report.setAffectedArea(dto.getAffectedArea());
         report.setDivisionName(dto.getDivisionName() != null && !dto.getDivisionName().isBlank() ? dto.getDivisionName().trim() : null);
@@ -92,14 +136,18 @@ public class PublicDamageReportService {
         return saved;
     }
 
-    // ── GET ALL ACTIVE REPORTS ───────────────────────────────────────────
+    // ── GET ALL ACTIVE REPORTS (WITHIN 1 WEEK) ───────────────────────────
     public List<PublicDamageReport> getAllReports() {
-        List<PublicDamageReport> list = repository.findAllActive();
-        list.sort((a, b) -> {
-            LocalDateTime tA = a.getReportedAt() != null ? a.getReportedAt() : LocalDateTime.MIN;
-            LocalDateTime tB = b.getReportedAt() != null ? b.getReportedAt() : LocalDateTime.MIN;
-            return tB.compareTo(tA);
-        });
+        autoExpireOldReports();
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(EXPIRATION_DAYS);
+        List<PublicDamageReport> list = repository.findAllActive().stream()
+                .filter(r -> r.getReportedAt() != null && !r.getReportedAt().isBefore(cutoff))
+                .sorted((a, b) -> {
+                    LocalDateTime tA = a.getReportedAt() != null ? a.getReportedAt() : LocalDateTime.MIN;
+                    LocalDateTime tB = b.getReportedAt() != null ? b.getReportedAt() : LocalDateTime.MIN;
+                    return tB.compareTo(tA);
+                })
+                .collect(Collectors.toList());
         list.forEach(this::populatePhotoUrls);
         return list;
     }
@@ -108,6 +156,9 @@ public class PublicDamageReportService {
     public PublicDamageReport getReportById(String id) {
         PublicDamageReport report = repository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Public report not found: " + id));
+        if (report.isDeleted() || isExpired(report)) {
+            throw new RuntimeException("Public report not found or has expired after 1 week: " + id);
+        }
         populatePhotoUrls(report);
         return report;
     }
@@ -150,30 +201,27 @@ public class PublicDamageReportService {
         return saved;
     }
 
-    // ── SOFT DELETE REPORT ───────────────────────────────────────────────
+    // ── SOFT DELETE REPORT (ONLY RURAL DIVISION OFFICER) ─────────────────
     public void softDeleteReport(String id, String userEmail) {
-        if (userEmail != null && !userEmail.isBlank()) {
-            if ("admin@edrr.com".equalsIgnoreCase(userEmail)) {
-                throw new RuntimeException("System administrator is not authorized to delete public damage reports");
-            }
-            userRepository.findByEmail(userEmail).ifPresent(u -> {
-                String role = u.getRole();
-                if (!List.of("RURAL_OFFICER", "GA_ADMIN", "RDA_ADMIN", "IRRIGATION_OFFICER").contains(role)) {
-                    throw new RuntimeException("Role " + role + " is not authorized to delete public damage reports");
-                }
-            });
+        if (userEmail == null || userEmail.isBlank()) {
+            throw new RuntimeException("Authentication required: Only Rural Division Officers are authorized to delete public damage reports");
         }
+        if ("admin@edrr.com".equalsIgnoreCase(userEmail)) {
+            throw new RuntimeException("System administrator is not authorized to delete public damage reports");
+        }
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new RuntimeException("User not found: " + userEmail));
+        if (!"RURAL_OFFICER".equalsIgnoreCase(user.getRole())) {
+            throw new RuntimeException("Only Rural Division Officers are authorized to delete public damage reports");
+        }
+
         PublicDamageReport report = getReportById(id);
         report.setDeleted(true);
         report.setDeletedAt(LocalDateTime.now());
         report.setDeletedBy(userEmail);
 
-        if (userEmail != null && !userEmail.isBlank()) {
-            userRepository.findByEmail(userEmail).ifPresent(u -> {
-                String name = u.getFullName();
-                report.setDeletedByName(name != null && !name.isBlank() ? name : u.getUsername());
-            });
-        }
+        String name = user.getFullName();
+        report.setDeletedByName(name != null && !name.isBlank() ? name : user.getUsername());
         repository.save(report);
     }
 
@@ -207,15 +255,93 @@ public class PublicDamageReportService {
         repository.deleteById(id);
     }
 
-    // ── STATS ────────────────────────────────────────────────────────────
+    // ── STATS (ONLY ACTIVE WITHIN 1 WEEK) ────────────────────────────────
     public Map<String, Object> getStats() {
+        autoExpireOldReports();
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(EXPIRATION_DAYS);
+        List<PublicDamageReport> active = repository.findAllActive().stream()
+                .filter(r -> r.getReportedAt() != null && !r.getReportedAt().isBefore(cutoff))
+                .collect(Collectors.toList());
+
+        long total = active.size();
+        long viewed = active.stream().filter(r -> r.isViewedByRda() || "VIEWED_BY_RDA".equalsIgnoreCase(r.getStatus())).count();
+        long pending = total - viewed;
+        long deleted = repository.countByDeletedTrue();
+
         Map<String, Object> stats = new HashMap<>();
-        stats.put("total", repository.countActive());
-        stats.put("pending", repository.countByStatusAndNotDeleted("PENDING"));
-        stats.put("inProgress", repository.countByStatusAndNotDeleted("IN_PROGRESS"));
-        stats.put("resolved", repository.countByStatusAndNotDeleted("RESOLVED"));
-        stats.put("deleted", repository.countByDeletedTrue());
+        stats.put("total", total);
+        stats.put("viewed", viewed);
+        stats.put("pending", pending);
+        stats.put("deleted", deleted);
+        stats.put("reportingOpen", isDamageReportingOpen());
         return stats;
+    }
+
+    // ── DAMAGE REPORTING ACCESS STATUS (GA ADMIN SETTING) ───────────────
+    public boolean isDamageReportingOpen() {
+        return systemSettingRepository.findByKey("damage_reporting_open")
+                .map(setting -> Boolean.parseBoolean(setting.getValue()))
+                .orElse(false);
+    }
+
+    public SystemSetting setDamageReportingOpen(boolean open, String userEmail) {
+        String updatedByName = userEmail;
+        if (userEmail != null && !userEmail.isBlank()) {
+            User u = userRepository.findByEmail(userEmail).orElse(null);
+            if (u != null) {
+                String role = u.getRole();
+                if (!"GA_ADMIN".equalsIgnoreCase(role) && !"SYSTEM_ADMIN".equalsIgnoreCase(role) && !"admin@edrr.com".equalsIgnoreCase(userEmail)) {
+                    throw new RuntimeException("Only Government Agent (GA) Admin is authorized to open or close damage reporting");
+                }
+                if (u.getFullName() != null && !u.getFullName().isBlank()) {
+                    updatedByName = u.getFullName() + " (" + u.getRole() + ")";
+                }
+            }
+        }
+        SystemSetting setting = systemSettingRepository.findByKey("damage_reporting_open")
+                .orElse(new SystemSetting("damage_reporting_open", String.valueOf(open), updatedByName));
+        setting.setValue(String.valueOf(open));
+        setting.setUpdatedAt(LocalDateTime.now());
+        setting.setUpdatedBy(updatedByName);
+        return systemSettingRepository.save(setting);
+    }
+
+    public SystemSetting getDamageReportingSetting() {
+        return systemSettingRepository.findByKey("damage_reporting_open")
+                .orElseGet(() -> new SystemSetting("damage_reporting_open", "false", "Default System Policy"));
+    }
+
+    // ── MARK AS VIEWED BY RDA / DMC ─────────────────────────────────────
+    public PublicDamageReport markAsViewedByRda(String id, String userEmail, boolean viewed) {
+        PublicDamageReport report = getReportById(id);
+        String officerName = "RDA Admin";
+        if (userEmail != null && !userEmail.isBlank()) {
+            User u = userRepository.findByEmail(userEmail).orElse(null);
+            if (u != null) {
+                if (!"RDA_ADMIN".equalsIgnoreCase(u.getRole()) && !"admin@edrr.com".equalsIgnoreCase(userEmail)) {
+                    throw new RuntimeException("Only RDA Admin is authorized to mark public damage reports as viewed");
+                }
+                officerName = (u.getFullName() != null && !u.getFullName().isBlank()) ? u.getFullName() : u.getUsername();
+            }
+        }
+
+        report.setViewedByRda(viewed);
+        if (viewed) {
+            report.setStatus("VIEWED_BY_RDA");
+            report.setViewedAt(LocalDateTime.now());
+            report.setViewedByName(officerName);
+            report.setViewedByEmail(userEmail);
+        } else {
+            report.setStatus("PENDING");
+            report.setViewedAt(null);
+            report.setViewedByName(null);
+            report.setViewedByEmail(null);
+        }
+        report.setUpdatedAt(LocalDateTime.now());
+
+        PublicDamageReport saved = repository.save(report);
+        populatePhotoUrls(saved);
+        return saved;
     }
 
     // ── PRIVATE: GENERATE REPORT NUMBER ──────────────────────────────────

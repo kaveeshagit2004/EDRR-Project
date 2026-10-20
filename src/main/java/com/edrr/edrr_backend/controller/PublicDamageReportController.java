@@ -2,12 +2,14 @@ package com.edrr.edrr_backend.controller;
 
 import com.edrr.edrr_backend.dto.PublicDamageReportDto;
 import com.edrr.edrr_backend.model.PublicDamageReport;
+import com.edrr.edrr_backend.model.SystemSetting;
 import com.edrr.edrr_backend.services.PublicDamageReportService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 import java.security.Principal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -122,5 +124,61 @@ public class PublicDamageReportController {
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getStats() {
         return ResponseEntity.ok(service.getStats());
+    }
+
+    // ── MARK REPORT AS VIEWED (ONLY RDA ADMIN) ───────────────────────────
+    // PUT http://localhost:8080/api/public-reports/{id}/view
+    @PutMapping("/{id}/view")
+    public ResponseEntity<?> markAsViewed(
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, Object> body,
+            Principal principal) {
+        try {
+            boolean viewed = true;
+            if (body != null && body.containsKey("viewed")) {
+                viewed = Boolean.parseBoolean(String.valueOf(body.get("viewed")));
+            }
+            String userEmail = principal != null ? principal.getName() : null;
+            PublicDamageReport updated = service.markAsViewedByRda(id, userEmail, viewed);
+            return ResponseEntity.ok(updated);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // ── GET CITIZEN REPORTING STATUS (PUBLIC ACCESS) ─────────────────────
+    // GET http://localhost:8080/api/public-reports/reporting-status
+    @GetMapping("/reporting-status")
+    public ResponseEntity<Map<String, Object>> getReportingStatus() {
+        SystemSetting setting = service.getDamageReportingSetting();
+        Map<String, Object> res = new HashMap<>();
+        res.put("open", service.isDamageReportingOpen());
+        res.put("updatedAt", setting.getUpdatedAt());
+        res.put("updatedBy", setting.getUpdatedBy());
+        return ResponseEntity.ok(res);
+    }
+
+    // ── TOGGLE CITIZEN REPORTING STATUS (GA ADMIN ONLY) ──────────────────
+    // PUT http://localhost:8080/api/public-reports/reporting-status
+    @PutMapping("/reporting-status")
+    public ResponseEntity<?> updateReportingStatus(
+            @RequestBody Map<String, Object> body,
+            Principal principal) {
+        try {
+            boolean open = false;
+            if (body != null && body.containsKey("open")) {
+                open = Boolean.parseBoolean(String.valueOf(body.get("open")));
+            }
+            String userEmail = principal != null ? principal.getName() : null;
+            SystemSetting setting = service.setDamageReportingOpen(open, userEmail);
+            Map<String, Object> res = new HashMap<>();
+            res.put("open", Boolean.parseBoolean(setting.getValue()));
+            res.put("updatedAt", setting.getUpdatedAt());
+            res.put("updatedBy", setting.getUpdatedBy());
+            res.put("message", "Citizen damage reporting is now " + (open ? "OPEN" : "CLOSED"));
+            return ResponseEntity.ok(res);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 }
