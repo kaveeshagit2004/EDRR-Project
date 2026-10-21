@@ -1,7 +1,6 @@
 package com.edrr.edrr_backend.controller;
 
 import com.edrr.edrr_backend.config.JwtUtil;
-import com.edrr.edrr_backend.config.JwtUtil;
 import com.edrr.edrr_backend.model.User;
 import com.edrr.edrr_backend.services.UserServices;
 import org.springframework.http.ResponseEntity;
@@ -25,7 +24,6 @@ public class AuthController {
         this.authenticationManager = authenticationManager;
         this.userDetailsService = userDetailsService;
     }
-
 
     private final UserServices userService;
     private final JwtUtil jwtUtil;
@@ -67,6 +65,14 @@ public class AuthController {
                     new UsernamePasswordAuthenticationToken(email, password)
             );
 
+            // Get user info and check soft delete / deactivation status
+            User user = userService.getUserByEmail(email).orElse(null);
+            if (user != null && (user.isDeleted() || !user.isActive())) {
+                Map<String, String> error = new HashMap<>();
+                error.put("error", "This account has been deactivated or moved to the recycle bin. Please contact the User Administrator.");
+                return ResponseEntity.status(403).body(error);
+            }
+
             // Generate JWT token
             UserDetails userDetails = userDetailsService.loadUserByUsername(email);
             List<String> roles = userDetails.getAuthorities().stream().map(GrantedAuthority::getAuthority).toList();
@@ -75,9 +81,9 @@ public class AuthController {
             // Update last login timestamp in DB
             userService.updateLastLogin(email);
 
-            // Get user info
-            User user = userService.getUserByEmail(email).get();
-            user.setPassword(null); // Don't send password back
+            if (user != null) {
+                user.setPassword(null); // Don't send password back
+            }
 
             Map<String, Object> response = new HashMap<>();
             response.put("token", token);

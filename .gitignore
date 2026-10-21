@@ -36,3 +36,4 @@ build/
 /stored_photos/
 .env
 /target/
+/stored_final_reports/

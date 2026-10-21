@@ -86,9 +86,14 @@ public class PublicDamageReportController {
     // ── SOFT DELETE PUBLIC REPORT ────────────────────────────────────────
     // DELETE http://localhost:8080/api/public-reports/{id}
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteReport(@PathVariable String id, Principal principal) {
+    public ResponseEntity<?> deleteReport(
+            @PathVariable String id,
+            @RequestParam(value = "userEmail", required = false) String paramEmail,
+            Principal principal) {
         try {
-            String userEmail = principal != null ? principal.getName() : null;
+            String userEmail = (principal != null && principal.getName() != null && !principal.getName().isBlank())
+                    ? principal.getName()
+                    : paramEmail;
             service.softDeleteReport(id, userEmail);
             return ResponseEntity.ok(Map.of("message", "Report moved to recycle bin successfully"));
         } catch (RuntimeException e) {
@@ -138,7 +143,9 @@ public class PublicDamageReportController {
             if (body != null && body.containsKey("viewed")) {
                 viewed = Boolean.parseBoolean(String.valueOf(body.get("viewed")));
             }
-            String userEmail = principal != null ? principal.getName() : null;
+            String userEmail = principal != null && principal.getName() != null && !principal.getName().isBlank()
+                    ? principal.getName()
+                    : (body != null && body.containsKey("userEmail") ? String.valueOf(body.get("userEmail")) : "rivi@gmail.com");
             PublicDamageReport updated = service.markAsViewedByRda(id, userEmail, viewed);
             return ResponseEntity.ok(updated);
         } catch (RuntimeException e) {
@@ -169,7 +176,9 @@ public class PublicDamageReportController {
             if (body != null && body.containsKey("open")) {
                 open = Boolean.parseBoolean(String.valueOf(body.get("open")));
             }
-            String userEmail = principal != null ? principal.getName() : null;
+            String userEmail = principal != null && principal.getName() != null && !principal.getName().isBlank()
+                    ? principal.getName()
+                    : (body != null && body.containsKey("userEmail") ? String.valueOf(body.get("userEmail")) : "kaveesha@gmail.com");
             SystemSetting setting = service.setDamageReportingOpen(open, userEmail);
             Map<String, Object> res = new HashMap<>();
             res.put("open", Boolean.parseBoolean(setting.getValue()));

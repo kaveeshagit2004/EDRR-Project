@@ -96,13 +96,56 @@ public class FinalReportController {
         }
     }
 
-    // ── DELETE FINAL REPORT ──────────────────────────────────────────────
+    // ── SOFT DELETE FINAL REPORT (MOVE TO RECYCLE BIN WITH REASON) ───────
     // DELETE http://localhost:8080/api/final-reports/{id}
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteFinalReport(@PathVariable String id) {
+    public ResponseEntity<?> deleteFinalReport(
+            @PathVariable String id,
+            @RequestParam(value = "reason", required = false) String reason,
+            @RequestParam(value = "deletedBy", required = false) String deletedBy,
+            @RequestParam(value = "deletedByName", required = false) String deletedByName
+    ) {
         try {
-            finalReportService.deleteFinalReport(id);
-            return ResponseEntity.ok(Map.of("message", "Final report deleted successfully"));
+            FinalReport report = finalReportService.softDeleteFinalReport(id, deletedBy, deletedByName, reason);
+            return ResponseEntity.ok(Map.of("message", "Final report moved to recycle bin", "report", report));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    // ── GET DELETED FINAL REPORTS (RECYCLE BIN) ──────────────────────────
+    // GET http://localhost:8080/api/final-reports/recycle-bin
+    @GetMapping("/recycle-bin")
+    public ResponseEntity<List<FinalReport>> getDeletedFinalReports() {
+        return ResponseEntity.ok(finalReportService.getDeletedFinalReports());
+    }
+
+    // ── GET RDA/DMC SPECIFIC NOTIFICATIONS ──────────────────────────────
+    // GET http://localhost:8080/api/final-reports/rda-notifications
+    @GetMapping("/rda-notifications")
+    public ResponseEntity<List<FinalReport>> getRdaNotifications() {
+        return ResponseEntity.ok(finalReportService.getRdaNotifications());
+    }
+
+    // ── RESTORE FINAL REPORT FROM RECYCLE BIN ────────────────────────────
+    // PUT http://localhost:8080/api/final-reports/{id}/restore
+    @PutMapping("/{id}/restore")
+    public ResponseEntity<?> restoreFinalReport(@PathVariable String id) {
+        try {
+            FinalReport report = finalReportService.restoreFinalReport(id);
+            return ResponseEntity.ok(Map.of("message", "Final report restored successfully", "report", report));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    // ── PERMANENTLY DELETE FINAL REPORT ──────────────────────────────────
+    // DELETE http://localhost:8080/api/final-reports/{id}/permanent
+    @DeleteMapping("/{id}/permanent")
+    public ResponseEntity<?> permanentlyDeleteFinalReport(@PathVariable String id) {
+        try {
+            finalReportService.permanentlyDeleteFinalReport(id);
+            return ResponseEntity.ok(Map.of("message", "Final report permanently deleted"));
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }

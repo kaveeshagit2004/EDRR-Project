@@ -11,6 +11,15 @@ public interface FinalReportRepository extends MongoRepository<FinalReport, Stri
     // Retrieve all final reports ordered with newest first
     List<FinalReport> findAllByOrderByUploadedAtDesc();
 
+    // Active final reports (not in recycle bin)
+    List<FinalReport> findByDeletedFalseOrderByUploadedAtDesc();
+
+    // Deleted final reports (in recycle bin)
+    List<FinalReport> findByDeletedTrueOrderByDeletedAtDesc();
+
+    // Count in recycle bin
+    long countByDeletedTrue();
+
     // Find by damage type if needed
     List<FinalReport> findByDamageTypeOrderByUploadedAtDesc(String damageType);
 }

@@ -29,15 +29,18 @@ public class PublicDamageReportService {
     private final PublicDamageReportRepository repository;
     private final UserRepository userRepository;
     private final SystemSettingRepository systemSettingRepository;
+    private final NotificationService notificationService;
 
     private static final long EXPIRATION_DAYS = 7L;
 
     public PublicDamageReportService(PublicDamageReportRepository repository,
                                      UserRepository userRepository,
-                                     SystemSettingRepository systemSettingRepository) {
+                                     SystemSettingRepository systemSettingRepository,
+                                     NotificationService notificationService) {
         this.repository = repository;
         this.userRepository = userRepository;
         this.systemSettingRepository = systemSettingRepository;
+        this.notificationService = notificationService;
     }
 
     private static final String UPLOAD_DIR = System.getProperty("user.dir") + "/stored_photos/";
@@ -133,6 +136,11 @@ public class PublicDamageReportService {
 
         PublicDamageReport saved = repository.save(report);
         populatePhotoUrls(saved);
+        try {
+            notificationService.notifyCitizenReportCreated(saved);
+        } catch (Exception ex) {
+            System.err.println("Failed to dispatch citizen report notification: " + ex.getMessage());
+        }
         return saved;
     }
 
@@ -216,6 +224,16 @@ public class PublicDamageReportService {
         }
 
         PublicDamageReport report = getReportById(id);
+
+        // Rural Division Officers CANNOT delete until RDA/DMC officer marks the report as viewed
+        boolean isViewedByRda = report.isViewedByRda()
+                || "VIEWED_BY_RDA".equalsIgnoreCase(report.getStatus())
+                || "VIEWED".equalsIgnoreCase(report.getStatus());
+
+        if (!isViewedByRda) {
+            throw new RuntimeException("Permission denied: Rural Division Officers cannot delete citizen reports until an RDA/DMC officer has reviewed and marked them as viewed.");
+        }
+
         report.setDeleted(true);
         report.setDeletedAt(LocalDateTime.now());
         report.setDeletedBy(userEmail);

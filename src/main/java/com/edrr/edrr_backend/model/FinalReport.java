@@ -40,6 +40,13 @@ public class FinalReport {
     // Timestamp when uploaded
     private LocalDateTime uploadedAt;
 
+    // Recycle bin / soft delete fields
+    private boolean deleted = false;
+    private LocalDateTime deletedAt;
+    private String deletedBy;
+    private String deletedByName;
+    private String deleteReason;
+
     public FinalReport() {
     }
 
@@ -89,4 +96,19 @@ public class FinalReport {
 
     public LocalDateTime getUploadedAt() { return uploadedAt; }
     public void setUploadedAt(LocalDateTime uploadedAt) { this.uploadedAt = uploadedAt; }
+
+    public boolean isDeleted() { return deleted; }
+    public void setDeleted(boolean deleted) { this.deleted = deleted; }
+
+    public LocalDateTime getDeletedAt() { return deletedAt; }
+    public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+
+    public String getDeletedBy() { return deletedBy; }
+    public void setDeletedBy(String deletedBy) { this.deletedBy = deletedBy; }
+
+    public String getDeletedByName() { return deletedByName; }
+    public void setDeletedByName(String deletedByName) { this.deletedByName = deletedByName; }
+
+    public String getDeleteReason() { return deleteReason; }
+    public void setDeleteReason(String deleteReason) { this.deleteReason = deleteReason; }
 }

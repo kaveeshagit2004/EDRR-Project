@@ -2,6 +2,7 @@ package com.edrr.edrr_backend.repository;
 
 import com.edrr.edrr_backend.model.User;
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 import java.util.Optional;
 import java.util.List;
@@ -20,6 +21,21 @@ public interface UserRepository extends MongoRepository<User, String> {
 
     // Find all users by role
     List<User> findByRole(String role);
+
+    // Active (non-deleted) users
+    @Query("{ '$or': [ { 'deleted': false }, { 'deleted': { '$exists': false } } ] }")
+    List<User> findAllActive();
+
+    // Soft-deleted users (in recycle bin)
+    @Query("{ 'deleted': true }")
+    List<User> findByDeletedTrue();
+
+    // Active users by role
+    @Query("{ 'role': ?0, '$or': [ { 'deleted': false }, { 'deleted': { '$exists': false } } ] }")
+    List<User> findByRoleAndNotDeleted(String role);
+
+    @Query(value = "{ 'deleted': true }", count = true)
+    long countByDeletedTrue();
 
     // Check if email already exists
     boolean existsByEmail(String email);

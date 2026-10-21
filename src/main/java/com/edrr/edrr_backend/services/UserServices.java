@@ -1,7 +1,7 @@
 package com.edrr.edrr_backend.services;
 
 import com.edrr.edrr_backend.model.User;
-import com.edrr.edrr_backend.repository.UserRepository         ;
+import com.edrr.edrr_backend.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
@@ -9,13 +9,11 @@ import java.util.List;
 import java.util.Optional;
 
 @Service
-  // Lombok: auto-generates constructor for final fields
 public class UserServices {
     public UserServices(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
     }
-
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -82,6 +80,7 @@ public class UserServices {
         user.setCreatedAt(LocalDateTime.now());
         user.setUpdatedAt(LocalDateTime.now());
         user.setActive(true);
+        user.setDeleted(false);
 
         // Save to MongoDB
         return userRepository.save(user);
@@ -98,14 +97,14 @@ public class UserServices {
         return userRepository.findByEmail(email);
     }
 
-    // ── GET ALL USERS ────────────────────────────────────────────────────
+    // ── GET ALL USERS (ACTIVE ONLY) ──────────────────────────────────────
     public List<User> getAllUsers() {
-        return userRepository.findAll();
+        return userRepository.findAllActive();
     }
 
-    // ── GET USERS BY ROLE ────────────────────────────────────────────────
+    // ── GET USERS BY ROLE (ACTIVE ONLY) ──────────────────────────────────
     public List<User> getUsersByRole(String role) {
-        return userRepository.findByRole(role);
+        return userRepository.findByRoleAndNotDeleted(role);
     }
 
     // ── UPDATE USER PROFILE ──────────────────────────────────────────────
@@ -138,7 +137,78 @@ public class UserServices {
         userRepository.save(user);
     }
 
-    // ── DELETE USER ──────────────────────────────────────────────────────
+    // ── SOFT DELETE USER (MOVE TO RECYCLE BIN WITH REASON) ────────────────
+    public User softDeleteUser(String id, String callerEmail, String reason) {
+        User user = getUserById(id);
+
+        // Prevent deleting the main User Controller account
+        if ("admin@edrr.com".equalsIgnoreCase(user.getEmail()) || "USER_ADMIN".equalsIgnoreCase(user.getRole())) {
+            throw new RuntimeException("The User Controller account cannot be deleted.");
+        }
+
+        if (reason == null || reason.trim().isEmpty()) {
+            throw new RuntimeException("A reason for deleting this user is required.");
+        }
+
+        String callerName = "User Controller";
+        if (callerEmail != null && !callerEmail.isBlank()) {
+            callerName = userRepository.findByEmail(callerEmail)
+                    .map(User::getFullName)
+                    .orElse("User Controller");
+        }
+
+        user.setDeleted(true);
+        user.setDeletedAt(LocalDateTime.now());
+        user.setDeletedBy(callerEmail != null ? callerEmail : "admin@edrr.com");
+        user.setDeletedByName(callerName);
+        user.setDeleteReason(reason.trim());
+        user.setActive(false);
+        user.setUpdatedAt(LocalDateTime.now());
+
+        return userRepository.save(user);
+    }
+
+    // ── RESTORE USER FROM RECYCLE BIN ────────────────────────────────────
+    public User restoreUser(String id, String callerEmail) {
+        User user = getUserById(id);
+        if (!user.isDeleted()) {
+            throw new RuntimeException("User is not in the recycle bin.");
+        }
+
+        user.setDeleted(false);
+        user.setDeletedAt(null);
+        user.setDeletedBy(null);
+        user.setDeletedByName(null);
+        user.setDeleteReason(null);
+        user.setActive(true);
+        user.setUpdatedAt(LocalDateTime.now());
+
+        return userRepository.save(user);
+    }
+
+    // ── GET DELETED USERS (RECYCLE BIN) ──────────────────────────────────
+    public List<User> getDeletedUsers(String callerEmail) {
+        List<User> deletedUsers = userRepository.findByDeletedTrue();
+        deletedUsers.sort((a, b) -> {
+            if (a.getDeletedAt() == null && b.getDeletedAt() == null) return 0;
+            if (a.getDeletedAt() == null) return 1;
+            if (b.getDeletedAt() == null) return -1;
+            return b.getDeletedAt().compareTo(a.getDeletedAt());
+        });
+        deletedUsers.forEach(u -> u.setPassword(null));
+        return deletedUsers;
+    }
+
+    // ── PERMANENTLY DELETE USER ──────────────────────────────────────────
+    public void permanentlyDeleteUser(String id, String callerEmail) {
+        User user = getUserById(id);
+        if ("admin@edrr.com".equalsIgnoreCase(user.getEmail()) || "USER_ADMIN".equalsIgnoreCase(user.getRole())) {
+            throw new RuntimeException("The User Controller account cannot be deleted.");
+        }
+        userRepository.deleteById(id);
+    }
+
+    // ── DELETE USER (LEGACY / HARD DELETE FALLBACK) ───────────────────────
     public void deleteUser(String id) {
         if (!userRepository.existsById(id)) {
             throw new RuntimeException("User not found with id: " + id);
@@ -161,5 +231,19 @@ public class UserServices {
             user.setUpdatedAt(LocalDateTime.now());
             userRepository.save(user);
         });
+    }
+
+    // ── UPDATE USER PROFILE PHOTO ────────────────────────────────────────
+    public User updateProfilePhoto(String identifier, String photoUrl) {
+        if (identifier == null || identifier.isBlank()) {
+            throw new RuntimeException("User identifier is required");
+        }
+        User user = userRepository.findById(identifier)
+                .or(() -> userRepository.findByEmail(identifier))
+                .orElseThrow(() -> new RuntimeException("User not found: " + identifier));
+
+        user.setProfilePhotoUrl(photoUrl);
+        user.setUpdatedAt(LocalDateTime.now());
+        return userRepository.save(user);
     }
 }

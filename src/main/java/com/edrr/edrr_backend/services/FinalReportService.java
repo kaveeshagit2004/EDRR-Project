@@ -1,7 +1,11 @@
 package com.edrr.edrr_backend.services;
 
+import com.edrr.edrr_backend.model.AlertAnnouncement;
 import com.edrr.edrr_backend.model.FinalReport;
+import com.edrr.edrr_backend.model.Notification;
+import com.edrr.edrr_backend.repository.AlertAnnouncementRepository;
 import com.edrr.edrr_backend.repository.FinalReportRepository;
+import com.edrr.edrr_backend.repository.NotificationRepository;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
@@ -19,10 +23,18 @@ import java.util.UUID;
 public class FinalReportService {
 
     private final FinalReportRepository finalReportRepository;
+    private final AlertAnnouncementRepository alertAnnouncementRepository;
+    private final NotificationRepository notificationRepository;
     private static final String UPLOAD_DIR = System.getProperty("user.dir") + "/stored_final_reports/";
 
-    public FinalReportService(FinalReportRepository finalReportRepository) {
+    public FinalReportService(
+            FinalReportRepository finalReportRepository,
+            AlertAnnouncementRepository alertAnnouncementRepository,
+            NotificationRepository notificationRepository
+    ) {
         this.finalReportRepository = finalReportRepository;
+        this.alertAnnouncementRepository = alertAnnouncementRepository;
+        this.notificationRepository = notificationRepository;
         ensureDirectoryExists(UPLOAD_DIR);
     }
 
@@ -68,7 +80,22 @@ public class FinalReportService {
     }
 
     public List<FinalReport> getAllFinalReports() {
-        return finalReportRepository.findAllByOrderByUploadedAtDesc();
+        return finalReportRepository.findAllByOrderByUploadedAtDesc()
+                .stream()
+                .filter(r -> !r.isDeleted())
+                .toList();
+    }
+
+    public List<FinalReport> getDeletedFinalReports() {
+        return finalReportRepository.findAll().stream()
+                .filter(FinalReport::isDeleted)
+                .sorted((a, b) -> {
+                    if (a.getDeletedAt() == null && b.getDeletedAt() == null) return 0;
+                    if (a.getDeletedAt() == null) return 1;
+                    if (b.getDeletedAt() == null) return -1;
+                    return b.getDeletedAt().compareTo(a.getDeletedAt());
+                })
+                .toList();
     }
 
     public FinalReport getFinalReportById(String id) {
@@ -103,7 +130,64 @@ public class FinalReportService {
         }
     }
 
-    public void deleteFinalReport(String id) {
+    public FinalReport softDeleteFinalReport(String id, String deletedBy, String deletedByName, String reason) {
+        FinalReport report = getFinalReportById(id);
+        report.setDeleted(true);
+        report.setDeletedAt(LocalDateTime.now());
+        report.setDeletedBy(deletedBy != null && !deletedBy.isBlank() ? deletedBy : "ga@edrr.com");
+        report.setDeletedByName(deletedByName != null && !deletedByName.isBlank() ? deletedByName : "Government Agent (GA)");
+        report.setDeleteReason(reason != null ? reason.trim() : "");
+        FinalReport saved = finalReportRepository.save(report);
+
+        // Send notification specifically targeted to RDA/DMC officers (NOT to all officers)
+        if (reason != null && !reason.trim().isEmpty()) {
+            try {
+                String pushMessage = "GA admin remove your uploaded final report on this \"" + reason.trim() + "\". check the report and submit it again";
+
+                Notification notification = new Notification();
+                notification.setTitle("Final Report Removed by GA Admin");
+                notification.setMessage(pushMessage);
+                notification.setType("FINAL_REPORT_DELETED");
+                notification.setPriority("HIGH");
+                // STRICTLY restricted to RDA / DMC officers only - other officers will NEVER see this
+                notification.setTargetRoles(List.of("RDA_ADMIN", "DMC_OFFICER"));
+                notification.setRelatedReportId(report.getId());
+                notification.setActive(true);
+                notification.setCreatedBy(deletedByName != null ? deletedByName : "Government Agent (GA)");
+                notification.setCreatedAt(LocalDateTime.now());
+                notificationRepository.save(notification);
+            } catch (Exception e) {
+                System.err.println("Could not create notification for deleted final report: " + e.getMessage());
+            }
+        }
+
+        return saved;
+    }
+
+    public List<FinalReport> getRdaNotifications() {
+        return finalReportRepository.findAll().stream()
+                .filter(r -> r.isDeleted() && r.getDeleteReason() != null && !r.getDeleteReason().isBlank())
+                .sorted((a, b) -> {
+                    if (a.getDeletedAt() == null && b.getDeletedAt() == null) return 0;
+                    if (a.getDeletedAt() == null) return 1;
+                    if (b.getDeletedAt() == null) return -1;
+                    return b.getDeletedAt().compareTo(a.getDeletedAt());
+                })
+                .limit(5)
+                .toList();
+    }
+
+    public FinalReport restoreFinalReport(String id) {
+        FinalReport report = getFinalReportById(id);
+        report.setDeleted(false);
+        report.setDeletedAt(null);
+        report.setDeletedBy(null);
+        report.setDeletedByName(null);
+        report.setDeleteReason(null);
+        return finalReportRepository.save(report);
+    }
+
+    public void permanentlyDeleteFinalReport(String id) {
         FinalReport report = getFinalReportById(id);
         if (report.getStoredFileName() != null) {
             try {
@@ -113,5 +197,9 @@ public class FinalReportService {
             }
         }
         finalReportRepository.deleteById(id);
+    }
+
+    public void deleteFinalReport(String id) {
+        softDeleteFinalReport(id, null, null, "Deleted by Administrator");
     }
 }
